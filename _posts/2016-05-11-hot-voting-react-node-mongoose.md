@@ -3,14 +3,13 @@ layout: post
 title: "'Hot' Voting with React, Node and Mongoose"
 description: "'Hot' Voting with React, Node and Mongoose"
 headline: "'Hot' Voting with React, Node and Mongoose"
-categories: 
-  - personal
 tags: "react,node,node.js,mongodb,mongoose"
-imagefeature: mongooses.jpg
 comments: false
 mathjax: false
 featured: true
 published: true
+categories: 
+  - webdevelopment
 ---
 I'm currently building reddit-like website with voting and commenting, but with cleaner layout. It should look a bit like facebook news feed, but with scores and two top comments under every post to promote discussion.
 
