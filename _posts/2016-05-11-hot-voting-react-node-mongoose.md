@@ -11,13 +11,12 @@ comments: false
 mathjax: false
 featured: true
 published: true
-modified: ""
 ---
 I'm currently building reddit-like website with voting and commenting, but with cleaner layout. It should look a bit like facebook news feed, but with scores and two top comments under every post to promote discussion.
 
 I'm going to try and describe how I designed my server and database, to balance website responsiveness and server/database loads.
 
-My goals are:
+### My goals are:
 
 - Have posts sorted by hot, top or new
 - On load check if post is voted on by the user
