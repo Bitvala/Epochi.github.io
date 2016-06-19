@@ -13,11 +13,132 @@ categories:
 ---
 I'm currently building reddit-like website with voting and commenting, but with cleaner layout. It should look a bit like facebook news feed, but with scores and two top comments under every post to promote discussion.
 
-I'm going to try and describe how I designed my server and database, to balance website responsiveness and server/database loads.
+I'm going to try and describe how I designed my server and database. Although my current build will only use Postgres, in the future I plan to add Redis layer on top for faster performance.
 
-### My goals are:
+### Table of Contents
+
+1. Functionality Goals
+2. Database
+	2.1. Database Structure
+    2.2. Tables
+
+
+### My functionality goals are:
 
 - Have posts sorted by hot, top or new
-- On load check if post is voted on by the user
-- Send user votes to server only when client view needs to be updated by server
-- Batch all votes in server, then send it to database when an amount is reached or timer runs out
+- On page load show user if post is voted on or saved by the user
+- Let user connect with local authentication or Google, Facebook
+
+
+### Database Sructure
+
+### Tables 
+
+User has username which is just lowercase name, so there are no users with extremely similair names. 
+I'm putting user authentication to a separate table, because of security concerns. This way I can make sure user_auth row info never get out from my server.
+
+CREATE TABLE user_data(
+  username text,
+  name text NOT NULL,
+  email text UNIQUE,
+  postscore integer DEFAULT 0,
+  commentscore integer DEFAULT 0,
+  postvote integer[],
+  postsave integer[],
+  commentvote integer[],
+  commentsave integer[],
+  posts integer[],
+  data json,
+  PRIMARY KEY (username)
+);
+  
+CREATE TABLE user_auth(
+  username text,
+  hashed_password text,
+  salt text,
+  authToken text,
+  thirdPartyAuth json,
+  PRIMARY KEY (username),
+  FOREIGN KEY (username) REFERENCES user_data (username) ON UPDATE CASCADE ON DELETE CASCADE
+);  
+
+
+CREATE TABLE post(
+ post_id SERIAL PRIMARY KEY ,
+ score integer DEFAULT 0,
+ voteup integer DEFAULT 0,
+ votedown integer DEFAULT 0,
+ author text NOT NULL,
+ date timestamp DEFAULT current_timestamp, 
+ title text NOT NULL,
+ subport text NOT NULL,
+ tags text[],
+ commentcount integer DEFAULT 0,
+ data json
+);
+
+CREATE INDEX CONCURRENTLY post_top_index ON post(voteup DESC NULLS LAST);
+
+CREATE INDEX CONCURRENTLY post_new_index ON post(date DESC);
+
+CREATE INDEX CONCURRENTLY post_hot_index ON post(date DESC NULLS LAST);
+
+
+CREATE TABLE post_vote(
+  post_id integer,
+  user_vote smallint,
+  username text,
+  FOREIGN KEY (post_id) REFERENCES post (post_id) ON UPDATE CASCADE ON DELETE CASCADE,
+  FOREIGN KEY (username) REFERENCES user_data (username) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT vote_pkey PRIMARY KEY (post_id, username)  
+);
+
+CREATE TABLE comment(
+  post_id integer,
+  parent_id integer,
+  comment_id integer,
+  score integer DEFAULT 0,
+  voteup integer DEFAULT 0,
+  votedown integer DEFAULT 0,
+  date timestamp DEFAULT current_timestamp,
+  data json,
+  PRIMARY KEY (post_id, parent_id, comment_id),
+  FOREIGN KEY (post_id) REFERENCES post (post_id)  ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE comment_vote(
+  post_id integer,
+  user_vote smallint,
+  username text,
+  FOREIGN KEY (post_id) REFERENCES post (post_id) ON UPDATE CASCADE ON DELETE CASCADE,
+  FOREIGN KEY (username) REFERENCES user_data (username) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT comment_vote_pkey PRIMARY KEY (post_id, username)  
+);
+
+/*
+data json: 
+  kind text (link, textpost, image)
+  bodytext text[],
+  imageurl text,
+  nsfw bool,
+  top_comments json,
+  edited date,
+  mod_reports text[],
+  user_reports text[],
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
