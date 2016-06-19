@@ -54,18 +54,56 @@ CREATE TABLE user_data(
   
 CREATE TABLE user_auth(
   username text,
+  email text,
   hashed_password text,
   salt text,
   authToken text,
   thirdPartyAuth json,
   PRIMARY KEY (username),
-  FOREIGN KEY (username) REFERENCES user_data (username) ON UPDATE CASCADE ON DELETE CASCADE
+  FOREIGN KEY (username) REFERENCES user_data (username) ON UPDATE CASCADE ON DELETE CASCADE,
+  FOREIGN KEY (email) REFERENCES user_data (email) ON UPDATE CASCADE
 );  
 
+
+CREATE OR REPLACE FUNCTION user_lowercase()
+  RETURNS "trigger" AS
+$BODY$
+BEGIN
+	new.email := lower(new.email);
+	new.username := lower(new.username);
+	return new;
+END
+$BODY$
+  LANGUAGE 'plpgsql' VOLATILE;
+
+CREATE TRIGGER user_lower_username
+  BEFORE INSERT OR UPDATE
+  ON users
+  FOR EACH ROW
+  EXECUTE PROCEDURE user_lower_username();
+
+
+
+
+
+CREATE TABLE "session" (
+  "sid" varchar NOT NULL COLLATE "default",
+        "sess" json NOT NULL,
+        "expire" timestamp(6) NOT NULL
+)
+
+WITH (OIDS=FALSE);
+ALTER TABLE "session" ADD CONSTRAINT "session_pkey" PRIMARY KEY ("sid") NOT DEFERRABLE INITIALLY IMMEDIATE;
+
+yp0=# GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO users;
+
+CREATE INDEX articles_published_at_index ON articles(published_at DESC NULLS LAST);
+CREATE INDEX CONCURRENTLY articles_published_at_index ON articles(published_at DESC NULLS LAST);
 
 CREATE TABLE post(
  post_id SERIAL PRIMARY KEY ,
  score integer DEFAULT 0,
+ kind smallint,
  voteup integer DEFAULT 0,
  votedown integer DEFAULT 0,
  author text NOT NULL,
@@ -78,7 +116,6 @@ CREATE TABLE post(
 );
 
 CREATE INDEX CONCURRENTLY post_top_index ON post(voteup DESC NULLS LAST);
-
 CREATE INDEX CONCURRENTLY post_new_index ON post(date DESC);
 
 CREATE INDEX CONCURRENTLY post_hot_index ON post(date DESC NULLS LAST);
