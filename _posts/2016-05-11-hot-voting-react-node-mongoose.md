@@ -1,19 +1,22 @@
 ---
 layout: post
-title: '''Hot'' Voting with React, Node and Postgres'
+title: Vote structure on Postgres
 description: '''Hot'' Voting with React, Node and Mongoose'
 headline: '''Hot'' Voting with React, Node and Mongoose'
-tags: 'react,node,node.js,mongodb,mongoose'
+tags: 'react,node,node.js,postgres,redux'
 comments: false
 mathjax: false
 featured: true
 published: true
 categories:
   - webdevelopment
+  - Database
+modified: ''
+imagefeature: ''
 ---
 I'm currently building reddit-like website with voting and commenting, but with cleaner layout. It should look a bit like facebook news feed, but with scores and two top comments under every post to promote discussion.
 
-I'm going to try and describe how I designed my server and database. Although my current build will only use Postgres, in the future I plan to add Redis layer on top for faster performance.
+I'm going to try and describe how I designed voting mechanism. Although my current build will only use Postgres, in the future I plan to add Redis layer on top for faster performance.
 
 ### Table of Contents
 
@@ -25,155 +28,78 @@ I'm going to try and describe how I designed my server and database. Although my
 
 ### My functionality goals are:
 
-- Have posts sorted by hot, top or new
 - On page load show user if post is voted on or saved by the user
-- Let user connect with local authentication or Google, Facebook
 
 
 ### Database Sructure
 
 ### Tables 
 
-User has username which is just lowercase name, so there are no users with extremely similair names. 
-I'm putting user authentication to a separate table, because of security concerns. This way I can make sure user_auth row info never get out from my server.
+User has two tables that are affected to votes
 
-CREATE TABLE user_data(
-  username text,
-  name text NOT NULL,
-  email text UNIQUE,
-  postscore integer DEFAULT 0,
-  commentscore integer DEFAULT 0,
-  postvote integer[],
-  postsave integer[],
-  commentvote integer[],
-  commentsave integer[],
-  posts integer[],
-  data json,
-  PRIMARY KEY (username)
-);
+	CREATE TABLE user_metadata(
+      username text,
+      ***
+      postscore integer DEFAULT 0,
+      commentscore integer DEFAULT 0,
+      ***
+  	PRIMARY KEY (username)
+	);
+
+	CREATE TABLE user_data(
+      username text,
+      ***
+      postvote integer[],
+      postsave integer[],
+      commentvote integer[],
+      commentsave integer[],
+      posts integer[],
+      ***
+      PRIMARY KEY (username)
+     )
+
+
+There's also user_auth table that stores all the secure data.
+The basic idea for splitting user_data away from user_metadata is because it will mainly be used for archiving, so when the time comes we will be able to put user_data in slower IOPS databases which are significally cheaper.
+
+And  votes table will have one row per unique pair of post and user.
+
+	CREATE TABLE votes(
+      post_id integer,
+      username text,
+      Votes: jsonb,
+
+      FOREIGN KEY (post_id) REFERENCES post (post_id) ON UPDATE CASCADE ON DELETE CASCADE,
+      FOREIGN KEY (username) REFERENCES user_data (username) ON UPDATE CASCADE ON DELETE CASCADE,
+      CONSTRAINT vote_pkey PRIMARY KEY (post_id, username)  
+      );
+_A bit on `CONSTRAINT votepkey PRIMARY KEY`. I will have to do some stress tests to see if (username, postid) or (postid, username) works better._
+
   
-CREATE TABLE user_auth(
-  username text,
-  email text,
-  hashed_password text,
-  salt text,
-  authToken text,
-  thirdPartyAuth json,
-  PRIMARY KEY (username),
-  FOREIGN KEY (username) REFERENCES user_data (username) ON UPDATE CASCADE ON DELETE CASCADE,
-  FOREIGN KEY (email) REFERENCES user_data (email) ON UPDATE CASCADE
-);  
+Votes jsonb structure:
 
+	{
+    	Vote: bool
+        Save: bool
+        comment_id: {
+        		Vote: bool
+                Save: bool
+            }
+    }
 
-CREATE OR REPLACE FUNCTION user_lowercase()
-  RETURNS "trigger" AS
-$BODY$
-BEGIN
-	new.email := lower(new.email);
-	new.username := lower(new.username);
-	return new;
-END
-$BODY$
-  LANGUAGE 'plpgsql' VOLATILE;
+I really thought long and hard about which structure to use for this. I basically came down to two possible solutions:
 
-CREATE TRIGGER user_lower_username
-  BEFORE INSERT OR UPDATE
-  ON users
-  FOR EACH ROW
-  EXECUTE PROCEDURE user_lower_username();
+1. Have a table with separate columns for vote,save,voted comments array,saved comments array.
+	Main drawbacks of this is that I'd have to somehow exclude all of the null data from returning to user.
+    And I'd have to check for duplicates inside comment arrays, which is not native and pretty tricky with postgres arrays.
+    
+2. Have jsonb that store vote,save,voted comments array,saved comments array.
+	Vote data doesn't need any altering when returning to client.
+    Jsonb natively support unique keys.
 
+There are also other ways to store votes, but I really wanted to keep it all in one row, because I will be checking for it every time user loads new posts, this way I'm able to give postgres one possible answer, which will give me query speed.
 
-
-
-
-CREATE TABLE "session" (
-  "sid" varchar NOT NULL COLLATE "default",
-        "sess" json NOT NULL,
-        "expire" timestamp(6) NOT NULL
-)
-
-WITH (OIDS=FALSE);
-ALTER TABLE "session" ADD CONSTRAINT "session_pkey" PRIMARY KEY ("sid") NOT DEFERRABLE INITIALLY IMMEDIATE;
-
-yp0=# GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO users;
-
-CREATE INDEX articles_published_at_index ON articles(published_at DESC NULLS LAST);
-CREATE INDEX CONCURRENTLY articles_published_at_index ON articles(published_at DESC NULLS LAST);
-
-CREATE TABLE post(
- post_id SERIAL PRIMARY KEY ,
- score integer DEFAULT 0,
- kind smallint,
- voteup integer DEFAULT 0,
- votedown integer DEFAULT 0,
- author text NOT NULL,
- date timestamp DEFAULT current_timestamp, 
- title text NOT NULL,
- subport text NOT NULL,
- tags text[],
- commentcount integer DEFAULT 0,
- data json
-);
-
-CREATE INDEX CONCURRENTLY post_top_index ON post(voteup DESC NULLS LAST);
-CREATE INDEX CONCURRENTLY post_new_index ON post(date DESC);
-
-CREATE INDEX CONCURRENTLY post_hot_index ON post(date DESC NULLS LAST);
-
-
-CREATE TABLE post_vote(
-  post_id integer,
-  user_vote smallint,
-  username text,
-  FOREIGN KEY (post_id) REFERENCES post (post_id) ON UPDATE CASCADE ON DELETE CASCADE,
-  FOREIGN KEY (username) REFERENCES user_data (username) ON UPDATE CASCADE ON DELETE CASCADE,
-  CONSTRAINT vote_pkey PRIMARY KEY (post_id, username)  
-);
-
-CREATE TABLE comment(
-  post_id integer,
-  parent_id integer,
-  comment_id integer,
-  score integer DEFAULT 0,
-  voteup integer DEFAULT 0,
-  votedown integer DEFAULT 0,
-  date timestamp DEFAULT current_timestamp,
-  data json,
-  PRIMARY KEY (post_id, parent_id, comment_id),
-  FOREIGN KEY (post_id) REFERENCES post (post_id)  ON UPDATE CASCADE ON DELETE CASCADE
-);
-
-CREATE TABLE comment_vote(
-  post_id integer,
-  user_vote smallint,
-  username text,
-  FOREIGN KEY (post_id) REFERENCES post (post_id) ON UPDATE CASCADE ON DELETE CASCADE,
-  FOREIGN KEY (username) REFERENCES user_data (username) ON UPDATE CASCADE ON DELETE CASCADE,
-  CONSTRAINT comment_vote_pkey PRIMARY KEY (post_id, username)  
-);
-
-/*
-data json: 
-  kind text (link, textpost, image)
-  bodytext text[],
-  imageurl text,
-  nsfw bool,
-  top_comments json,
-  edited date,
-  mod_reports text[],
-  user_reports text[],
-*/
-
-
-
-
-
-
-
-
-
-
-
+I went with jsonb because the solution seems much cleaner and without any obvious drawbacks.
 
 
 
